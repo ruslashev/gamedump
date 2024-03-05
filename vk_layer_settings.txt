@@ -1,0 +1,5 @@
+khronos_validation.printf_buffer_size=8192
+khronos_validation.validate_sync=true
+khronos_validation.sync_queue_submit=true
+// khronos_validation.validate_best_practices=true
+// khronos_validation.validate_best_practices_nvidia=true

@@ -1,0 +1,72 @@
+#version 450
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+layout (binding = 0, rgba8) uniform writeonly image2D resultImage;
+
+layout(push_constant) uniform PushConstants {
+    vec3 skycol;
+} consts;
+
+#define EPSILON 0.0001
+#define MAXDIST 1000.0
+
+struct Sphere
+{
+    vec3 pos;
+    float radius;
+    vec3 diffuse;
+};
+
+const Sphere[] spheres = Sphere[] (
+    Sphere(vec3( 1.75, -0.5,   0.0), 1.0,  vec3(0.0,  1.0,  0.0)),
+    Sphere(vec3( 0.0,   1.0,  -0.5), 1.0,  vec3(0.65, 0.77, 0.97)),
+    Sphere(vec3(-1.75, -0.75, -0.5), 1.25, vec3(0.9,  0.76, 0.46))
+);
+
+float sphereIntersect(in vec3 rayO, in vec3 rayD, in Sphere sphere)
+{
+    vec3 oc = rayO - sphere.pos;
+    float b = 2.0 * dot(oc, rayD);
+    float c = dot(oc, oc) - sphere.radius * sphere.radius;
+    float D = b * b - 4.0 * c;
+
+    if (D < 0.0)
+        return -1.0;
+
+    return (-b - sqrt(D)) / 2.0;
+}
+
+vec3 renderScene(vec3 rayO, vec3 rayD)
+{
+    float dist = MAXDIST;
+    vec3 color = consts.skycol;
+
+    for (int i = 0; i < spheres.length(); i++) {
+        float distSphere = sphereIntersect(rayO, rayD, spheres[i]);
+        if (distSphere > EPSILON && distSphere < dist) {
+            dist = distSphere;
+            color = spheres[i].diffuse;
+        }
+    }
+
+    return color;
+}
+
+void main()
+{
+    const ivec2 resolution = imageSize(resultImage);
+    const ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+
+    if (pixel.x >= resolution.x || pixel.y >= resolution.y) {
+        return;
+    }
+
+    const vec2 uv = (2.0 * vec2(pixel) - resolution) / resolution.y;
+
+    vec3 rayO = vec3(0.0, 0.0, 4.0);
+    vec3 rayD = normalize(vec3(uv, -1.0));
+
+    vec3 finalColor = renderScene(rayO, rayD);
+
+    imageStore(resultImage, pixel, vec4(finalColor, 0.0));
+}

@@ -1,0 +1,14 @@
+[package]
+name = "game"
+version = "0.0.0"
+edition = "2021"
+
+[[bin]]
+name = "main"
+path = "main.rs"
+
+[dependencies]
+anyhow = "1.0.75"
+log = "0.4.20"
+
+engine = { path = "../engine" }

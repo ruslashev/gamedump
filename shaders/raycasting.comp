@@ -1,0 +1,161 @@
+#version 450
+
+#extension GL_EXT_debug_printf : enable
+
+layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+layout (binding = 0, rgba8) writeonly uniform image2D colorImage;
+layout (binding = 1, r32f)            uniform image2D depthImage;
+layout (binding = 2)        readonly  buffer B1 { uint worldSizes[]; };
+layout (binding = 3)        readonly  buffer B2 { uint worldSpans[]; };
+
+layout(push_constant) uniform PushConstants {
+    vec3 pos;
+    vec2 dir;
+    vec2 plane;
+    uint worldSizeX;
+    uint worldSizeY;
+    uint worldSizeZ;
+} consts;
+
+int imageHeight;
+
+uint worldSizeX = consts.worldSizeX;
+uint worldSizeY = consts.worldSizeY;
+uint worldSizeZ = consts.worldSizeZ;
+
+const float SQRT_2 = 1.4142135623730950488;
+
+void blit(uint x, int ymin, int ymax, vec3 color, float depth)
+{
+    if (ymin >= imageHeight || ymax < 0) {
+        return;
+    }
+
+    ymin = max(ymin, 0);
+    ymax = min(ymax, imageHeight - 1);
+
+    // float maxDepth = max(worldSizeX, worldSizeZ) * SQRT_2;
+    float maxDepth = 1000; // TODO: use `far` from perspective_rh?
+    float normDepth = depth / maxDepth;
+
+    for (uint y = ymin; y <= ymax; ++y) {
+        ivec2 p = ivec2(x, y);
+        float pixelDepth = imageLoad(depthImage, p).r;
+
+        if (normDepth < pixelDepth) {
+            imageStore(colorImage, p, vec4(color, 1.0));
+            imageStore(depthImage, p, vec4(normDepth, 0.0, 0.0, 1.0));
+        }
+    }
+}
+
+void main()
+{
+    const ivec2 res = imageSize(colorImage);
+    const uint col = gl_GlobalInvocationID.x;
+
+    imageHeight = res.y;
+
+    const float xnorm = 2.0 * float(col) / float(res.x) - 1.0;
+
+    const vec3 rayOrg = consts.pos;
+    const vec2 rayDir = consts.dir + consts.plane * xnorm;
+
+    const vec2 deltaDist = abs(1.0 / rayDir);
+    const ivec2 mapStep = ivec2(sign(rayDir));
+
+    ivec2 mapPos = ivec2(rayOrg.xz);
+    vec2 dist = (mapStep * (mapPos - rayOrg.xz) + (mapStep + 1.0) / 2.0) * deltaDist;
+    uint side;
+
+    float hover = 32.0;
+    float scale = 512.0;
+    float horizon = 384.0;
+
+    while (true) {
+        if (dist.x < dist.y) {
+            dist.x += deltaDist.x;
+            mapPos.x += mapStep.x;
+            side = 0;
+        } else {
+            dist.y += deltaDist.y;
+            mapPos.y += mapStep.y;
+            side = 1;
+        }
+
+        if (mapPos.x < 0 || mapPos.y < 0 || mapPos.x >= worldSizeX || mapPos.y >= worldSizeZ) {
+            break;
+        }
+
+        float perpDist = dist.y - deltaDist.y;
+        if (side == 0) {
+            perpDist = dist.x - deltaDist.x;
+        }
+
+        vec3 color = vec3(1.0, 1.0, 1.0);
+        if (side == 0) {
+            color = vec3(0.6, 0.6, 0.6);
+        }
+
+        uint idx = uint(mapPos.y * worldSizeX + mapPos.x);
+        uint numSpans = worldSizes[idx];
+
+        if (numSpans == 0) {
+            continue;
+        }
+
+        const uint x = mapPos.x;
+        const uint z = mapPos.y;
+
+        int ymin;
+        int ymax;
+
+        for (uint n = 0; n < numSpans; ++n) {
+            uint botIdx = z * worldSizeY * worldSizeX + (n * 2 + 0) * worldSizeX + x;
+            uint topIdx = z * worldSizeY * worldSizeX + (n * 2 + 1) * worldSizeX + x;
+
+            uint bot = worldSpans[botIdx];
+            uint top = worldSpans[topIdx];
+
+            ymin = int((hover - top) * scale / perpDist + horizon);
+            ymax = int((hover - bot) * scale / perpDist + horizon);
+
+            blit(col, ymin, ymax, color, perpDist);
+        }
+
+        // One more step for floor and ceilings
+        vec2 cdist = dist;
+        if (cdist.x < cdist.y) {
+            cdist.x += deltaDist.x;
+            side = 0;
+        } else {
+            cdist.y += deltaDist.y;
+            side = 1;
+        }
+
+        float nextDist = cdist.y - deltaDist.y;
+        if (side == 0) {
+            nextDist = cdist.x - deltaDist.x;
+        }
+
+        uint n = numSpans - 1;
+        uint botIdx = z * worldSizeY * worldSizeX + (0 * 2 + 0) * worldSizeX + x;
+        uint topIdx = z * worldSizeY * worldSizeX + (n * 2 + 1) * worldSizeX + x;
+
+        uint bot_point = worldSpans[botIdx];
+        uint top_point = worldSpans[topIdx];
+
+        color = vec3(0.8, 0.8, 0.8);
+
+        ymin = int((hover - top_point) * scale / nextDist + horizon);
+        ymax = int((hover - top_point) * scale / perpDist + horizon);
+
+        blit(col, ymin, ymax, color, perpDist);
+
+        ymin = int((hover - bot_point) * scale / perpDist + horizon);
+        ymax = int((hover - bot_point) * scale / nextDist + horizon);
+
+        blit(col, ymin, ymax, color, perpDist);
+    }
+}

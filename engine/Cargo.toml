@@ -1,0 +1,39 @@
+[package]
+name = "engine"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+anyhow = "1.0.75"
+
+[dependencies.ash]
+version = "0.37.3"
+default-features = false
+features = ["linked"]
+
+[dependencies.glam]
+version = "0.24.1"
+default-features = false
+features = ["std", "debug-glam-assert", "fast-math"]
+
+[dependencies.glfw]
+version = "0.52.0"
+default-features = false
+features = ["vulkan", "log", "glfw-sys"]
+
+[dependencies.jpegxl-sys]
+version = "0.8.2"
+default-features = false
+features = ["vendored"]
+
+[dependencies.log]
+version = "0.4.20"
+default-features = false
+features = ["std"]
+
+[dependencies.mimalloc]
+version = "0.1.38"
+default-features = false
